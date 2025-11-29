@@ -25,6 +25,25 @@ void ServerManager::setupServer(ushort port)
     qDebug() << "Listening for incoming connections...";
 }
 
+void ServerManager::broadcastClientList()
+{
+    QStringList names;
+    // Store all the names in a list
+    for(int i = 0; i < _clients.length(); i++)
+    {
+        names.append(_clients[i]->property("name").toString());
+    }
+
+    // Broadcast to all the clients the new list
+    QByteArray data;
+    QDataStream out(&data, QIODevice::WriteOnly);
+    out << QString("CLIENT_LIST") << names;
+    for(int i = 0; i < _clients.length(); i++)
+    {
+        _clients[i]->write(data);
+    }
+}
+
 void ServerManager::OnNewClientReceived()
 {
     auto client = _server->nextPendingConnection();
@@ -32,7 +51,7 @@ void ServerManager::OnNewClientReceived()
     _clients.append(client);
 
     // Assign ID as a property to client
-    auto id = _clients.length();
+    auto id = _clients.count();
     client->setProperty("id", id);
 
     // Bind event on ready read
@@ -58,28 +77,46 @@ void ServerManager::OnClientDisconnected()
         client->deleteLater();
 
         qDebug() << "Client disconnected... " << id;
+
+        // Broadcast the client list again after a client disconnects
+        broadcastClientList();
     }
 }
 
 void ServerManager::OnReadyRead()
 {
     QTcpSocket* client = qobject_cast<QTcpSocket*>(sender());
+    if(!client) return;
 
-    if(!client)
-        return;
+    QDataStream in(client);
 
-    // Read data from client
-    QByteArray data = client->readAll();
-    qDebug() << "Received data... " << data;
-
-    // Broadcast to all other clients
-    for (int i = 0; i < _clients.size(); ++i)
+    while(client->bytesAvailable() > 0)
     {
-        QTcpSocket *other = _clients[i];
+        QString header;
+        in >> header;
 
-        if (other != client)
+        if(header == "SET_NAME")
         {
-            other->write(data);
+            QString name;
+            in >> name;
+            client->setProperty("name", name);
+
+            qDebug() << "User connected: " << name;
+
+            // Broadcast the new client list to everyone
+            broadcastClientList();
+        }
+        else if(header == "CHAT")
+        {
+            QString message;
+            in >> message;
+
+            QString fullMessage = client->property("name").toString() + ": " + message;
+            //broadcastChat(fullMessage);
+        }
+        else
+        {
+            qWarning() << "Unknown header received:" << header;
         }
     }
 }

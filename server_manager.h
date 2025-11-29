@@ -14,6 +14,8 @@ public:
 
     void setupServer(ushort port = 5500);
 
+    void broadcastClientList();
+
 signals:
     void OnServerManagerClientConnected(QTcpSocket* client);
 
